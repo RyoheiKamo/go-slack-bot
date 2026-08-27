@@ -3,8 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/RyoheiKamo/go-slack-bot/internal/service"
 )
 
 type SlackEventRequest struct {
@@ -23,9 +27,32 @@ func main() {
 			return
 		}
 
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		timestamp := r.Header.Get("X-Slack-Request-Timestamp")
+		signature := r.Header.Get("X-Slack-Signature")
+
+		signingSecret := os.Getenv("SLACK_SIGNING_SECRET")
+		if signingSecret == "" {
+			log.Println("SLACK_SIGNING_SECRET is not set")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		signatureService := service.NewSlackSignatureService(signingSecret)
+
+		if !signatureService.Verify(timestamp, signature, body) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		var req SlackEventRequest
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
@@ -36,7 +63,7 @@ func main() {
 			if err := json.NewEncoder(w).Encode(map[string]string{
 				"challenge": req.Challenge,
 			}); err != nil {
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				log.Printf("failed to encode response: %v", err)
 			}
 
 			return
