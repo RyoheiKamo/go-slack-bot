@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/RyoheiKamo/go-slack-bot/internal/prompt"
 )
 
 type OpenAIService struct {
@@ -13,8 +15,9 @@ type OpenAIService struct {
 }
 
 type openAIRequest struct {
-	Model string            `json:"model"`
-	Input []openAIInputItem `json:"input"`
+	Model        string            `json:"model"`
+	Instructions string            `json:"instructions"`
+	Input        []openAIInputItem `json:"input"`
 }
 
 type openAIInputItem struct {
@@ -45,7 +48,8 @@ func NewOpenAIService(apiKey string) *OpenAIService {
 
 func (s *OpenAIService) GenerateResponse(message string) (string, error) {
 	payload := openAIRequest{
-		Model: "gpt-5-mini",
+		Model:        "gpt-5-mini",
+		Instructions: prompt.SystemPrompt,
 		Input: []openAIInputItem{
 			{
 				Role:    "user",
