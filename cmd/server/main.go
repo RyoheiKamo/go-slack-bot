@@ -88,6 +88,22 @@ func main() {
 				)
 			}
 
+			botToken := os.Getenv("SLACK_BOT_TOKEN")
+			if botToken == "" {
+				log.Println("SLACK_BOT_TOKEN is not set")
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+
+			messageService := service.NewSlackMessageService(botToken)
+
+			if err := messageService.SendMessage(
+				req.Event.Channel,
+				"Hello from go-slack-bot!",
+			); err != nil {
+				log.Printf("failed to send Slack message: %v", err)
+			}
+
 			w.WriteHeader(http.StatusOK)
 			return
 		}
