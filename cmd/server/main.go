@@ -12,8 +12,17 @@ import (
 )
 
 type SlackEventRequest struct {
-	Type      string `json:"type"`
-	Challenge string `json:"challenge"`
+	Type      string     `json:"type"`
+	Challenge string     `json:"challenge"`
+	Event     SlackEvent `json:"event"`
+}
+
+type SlackEvent struct {
+	Type    string `json:"type"`
+	User    string `json:"user"`
+	Text    string `json:"text"`
+	Channel string `json:"channel"`
+	Ts      string `json:"ts"`
 }
 
 func main() {
@@ -66,6 +75,20 @@ func main() {
 				log.Printf("failed to encode response: %v", err)
 			}
 
+			return
+		}
+
+		if req.Type == "event_callback" {
+			if req.Event.Type == "app_mention" {
+				log.Printf(
+					"app_mention received: user=%s channel=%s text=%s",
+					req.Event.User,
+					req.Event.Channel,
+					req.Event.Text,
+				)
+			}
+
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 
