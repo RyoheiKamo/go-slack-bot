@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/RyoheiKamo/go-slack-bot/internal/service"
 )
@@ -15,6 +17,7 @@ import (
 type SlackEventRequest struct {
 	Type      string     `json:"type"`
 	Challenge string     `json:"challenge"`
+	EventID   string     `json:"event_id"`
 	Event     SlackEvent `json:"event"`
 }
 
@@ -25,6 +28,11 @@ type SlackEvent struct {
 	Channel string `json:"channel"`
 	Ts      string `json:"ts"`
 }
+
+var (
+	processedEvents = make(map[string]time.Time)
+	processedMu     sync.Mutex
+)
 
 func handleAppMention(event SlackEvent) {
 	log.Printf(
@@ -83,6 +91,31 @@ func handleAppMention(event SlackEvent) {
 		)
 		return
 	}
+}
+
+func isDuplicateEvent(eventID string) bool {
+	if eventID == "" {
+		return false
+	}
+
+	processedMu.Lock()
+	defer processedMu.Unlock()
+
+	now := time.Now()
+
+	for id, processedAt := range processedEvents {
+		if now.Sub(processedAt) > 10*time.Minute {
+			delete(processedEvents, id)
+		}
+	}
+
+	if _, exists := processedEvents[eventID]; exists {
+		return true
+	}
+
+	processedEvents[eventID] = now
+
+	return false
 }
 
 func main() {
@@ -148,6 +181,12 @@ func main() {
 
 		// Slack event
 		if req.Type == "event_callback" {
+			if isDuplicateEvent(req.EventID) {
+				log.Printf("duplicate event ignored: event_id=%s", req.EventID)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
 			if req.Event.Type == "app_mention" {
 				go handleAppMention(req.Event)
 			}
