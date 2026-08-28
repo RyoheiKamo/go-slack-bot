@@ -100,6 +100,7 @@ func main() {
 			if err := messageService.SendMessage(
 				req.Event.Channel,
 				"Hello from go-slack-bot!",
+				req.Event.Ts,
 			); err != nil {
 				log.Printf("failed to send Slack message: %v", err)
 			}

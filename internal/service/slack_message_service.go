@@ -13,8 +13,9 @@ type SlackMessageService struct {
 }
 
 type slackPostMessageRequest struct {
-	Channel string `json:"channel"`
-	Text    string `json:"text"`
+	Channel  string `json:"channel"`
+	Text     string `json:"text"`
+	ThreadTs string `json:"thread_ts,omitempty"`
 }
 
 type slackPostMessageResponse struct {
@@ -29,10 +30,15 @@ func NewSlackMessageService(botToken string) *SlackMessageService {
 	}
 }
 
-func (s *SlackMessageService) SendMessage(channel string, text string) error {
+func (s *SlackMessageService) SendMessage(
+	channel string,
+	text string,
+	threadTs string,
+) error {
 	payload := slackPostMessageRequest{
-		Channel: channel,
-		Text:    text,
+		Channel:  channel,
+		Text:     text,
+		ThreadTs: threadTs,
 	}
 
 	body, err := json.Marshal(payload)
