@@ -26,6 +26,65 @@ type SlackEvent struct {
 	Ts      string `json:"ts"`
 }
 
+func handleAppMention(event SlackEvent) {
+	log.Printf(
+		"app_mention received: user=%s channel=%s text=%s",
+		event.User,
+		event.Channel,
+		event.Text,
+	)
+
+	// Botのメンション部分を除去
+	message := event.Text
+
+	if index := strings.Index(message, ">"); index != -1 {
+		message = strings.TrimSpace(message[index+1:])
+	}
+
+	log.Printf("user message: %s", message)
+
+	// OpenAI API
+	openAIAPIKey := os.Getenv("OPENAI_API_KEY")
+	if openAIAPIKey == "" {
+		log.Println("OPENAI_API_KEY is not set")
+		return
+	}
+
+	openAIService := service.NewOpenAIService(openAIAPIKey)
+
+	aiResponse, err := openAIService.GenerateResponse(message)
+	if err != nil {
+		log.Printf(
+			"failed to generate OpenAI response: %v",
+			err,
+		)
+		return
+	}
+
+	log.Printf("OpenAI response: %s", aiResponse)
+
+	// Slackへ返信
+	botToken := os.Getenv("SLACK_BOT_TOKEN")
+	if botToken == "" {
+		log.Println("SLACK_BOT_TOKEN is not set")
+		return
+	}
+
+	messageService := service.NewSlackMessageService(botToken)
+
+	if err := messageService.SendMessage(
+		event.Channel,
+		aiResponse,
+		event.Ts,
+	); err != nil {
+		log.Printf(
+			"failed to send Slack message: %v",
+			err,
+		)
+		return
+	}
+}
+
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "go-slack-bot")
@@ -90,66 +149,7 @@ func main() {
 		// Slack event
 		if req.Type == "event_callback" {
 			if req.Event.Type == "app_mention" {
-				log.Printf(
-					"app_mention received: user=%s channel=%s text=%s",
-					req.Event.User,
-					req.Event.Channel,
-					req.Event.Text,
-				)
-
-				// Botのメンション部分を除去
-				message := req.Event.Text
-
-				if index := strings.Index(message, ">"); index != -1 {
-					message = strings.TrimSpace(message[index+1:])
-				}
-
-				log.Printf("user message: %s", message)
-
-				// OpenAI API
-				openAIAPIKey := os.Getenv("OPENAI_API_KEY")
-				if openAIAPIKey == "" {
-					log.Println("OPENAI_API_KEY is not set")
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-					return
-				}
-
-				openAIService := service.NewOpenAIService(openAIAPIKey)
-
-				aiResponse, err := openAIService.GenerateResponse(message)
-				if err != nil {
-					log.Printf(
-						"failed to generate OpenAI response: %v",
-						err,
-					)
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-					return
-				}
-
-				log.Printf("OpenAI response: %s", aiResponse)
-
-				// Slackへ返信
-				botToken := os.Getenv("SLACK_BOT_TOKEN")
-				if botToken == "" {
-					log.Println("SLACK_BOT_TOKEN is not set")
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-					return
-				}
-
-				messageService := service.NewSlackMessageService(botToken)
-
-				if err := messageService.SendMessage(
-					req.Event.Channel,
-					aiResponse,
-					req.Event.Ts,
-				); err != nil {
-					log.Printf(
-						"failed to send Slack message: %v",
-						err,
-					)
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-					return
-				}
+				go handleAppMention(req.Event)
 			}
 
 			w.WriteHeader(http.StatusOK)
