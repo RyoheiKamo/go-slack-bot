@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,11 +23,12 @@ type SlackEventRequest struct {
 }
 
 type SlackEvent struct {
-	Type    string `json:"type"`
-	User    string `json:"user"`
-	Text    string `json:"text"`
-	Channel string `json:"channel"`
-	Ts      string `json:"ts"`
+	Type     string `json:"type"`
+	User     string `json:"user"`
+	Text     string `json:"text"`
+	Channel  string `json:"channel"`
+	Ts       string `json:"ts"`
+	ThreadTs string `json:"thread_ts"`
 }
 
 var (
@@ -44,6 +46,7 @@ func isDuplicateEvent(eventID string) bool {
 
 	now := time.Now()
 
+	// 10分以上前のevent_idを削除
 	for id, processedAt := range processedEvents {
 		if now.Sub(processedAt) > 10*time.Minute {
 			delete(processedEvents, id)
@@ -76,6 +79,40 @@ func handleAppMention(event SlackEvent) {
 
 	log.Printf("user message: %s", message)
 
+	// スレッドIDを決定
+	threadTs := event.ThreadTs
+
+	if threadTs == "" {
+		threadTs = event.Ts
+	}
+
+	ctx := context.Background()
+
+	// Redis
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		log.Println("REDIS_ADDR is not set")
+		return
+	}
+
+	chatHistoryService := service.NewChatHistoryService(redisAddr)
+
+	history, err := chatHistoryService.GetHistory(
+		ctx,
+		event.Channel,
+		threadTs,
+	)
+	if err != nil {
+		log.Printf("failed to get chat history: %v", err)
+		return
+	}
+
+	// 今回のユーザーメッセージを履歴へ追加
+	history = append(history, service.ChatMessage{
+		Role:    "user",
+		Content: message,
+	})
+
 	// OpenAI API
 	openAIAPIKey := os.Getenv("OPENAI_API_KEY")
 	if openAIAPIKey == "" {
@@ -85,7 +122,7 @@ func handleAppMention(event SlackEvent) {
 
 	openAIService := service.NewOpenAIService(openAIAPIKey)
 
-	aiResponse, err := openAIService.GenerateResponse(message)
+	aiResponse, err := openAIService.GenerateResponse(history)
 	if err != nil {
 		log.Printf(
 			"failed to generate OpenAI response: %v",
@@ -95,6 +132,23 @@ func handleAppMention(event SlackEvent) {
 	}
 
 	log.Printf("OpenAI response: %s", aiResponse)
+
+	// AIの回答を履歴へ追加
+	history = append(history, service.ChatMessage{
+		Role:    "assistant",
+		Content: aiResponse,
+	})
+
+	// Redisへ会話履歴を保存
+	if err := chatHistoryService.SaveHistory(
+		ctx,
+		event.Channel,
+		threadTs,
+		history,
+	); err != nil {
+		log.Printf("failed to save chat history: %v", err)
+		return
+	}
 
 	// Slackへ返信
 	botToken := os.Getenv("SLACK_BOT_TOKEN")
@@ -108,7 +162,7 @@ func handleAppMention(event SlackEvent) {
 	if err := messageService.SendMessage(
 		event.Channel,
 		aiResponse,
-		event.Ts,
+		threadTs,
 	); err != nil {
 		log.Printf(
 			"failed to send Slack message: %v",
@@ -141,7 +195,11 @@ func main() {
 		signingSecret := os.Getenv("SLACK_SIGNING_SECRET")
 		if signingSecret == "" {
 			log.Println("SLACK_SIGNING_SECRET is not set")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			http.Error(
+				w,
+				"Internal Server Error",
+				http.StatusInternalServerError,
+			)
 			return
 		}
 
@@ -160,10 +218,10 @@ func main() {
 		}
 
 		log.Printf(
-			"Slack request received: type=%s event_type=%s body=%s",
+			"Slack request received: type=%s event_type=%s event_id=%s",
 			req.Type,
 			req.Event.Type,
-			string(body),
+			req.EventID,
 		)
 
 		// Slack URL verification
@@ -182,7 +240,11 @@ func main() {
 		// Slack event
 		if req.Type == "event_callback" {
 			if isDuplicateEvent(req.EventID) {
-				log.Printf("duplicate event ignored: event_id=%s", req.EventID)
+				log.Printf(
+					"duplicate event ignored: event_id=%s",
+					req.EventID,
+				)
+
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -191,6 +253,7 @@ func main() {
 				go handleAppMention(req.Event)
 			}
 
+			// Slackには即座に200を返す
 			w.WriteHeader(http.StatusOK)
 			return
 		}

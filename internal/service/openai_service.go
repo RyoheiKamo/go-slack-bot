@@ -46,16 +46,22 @@ func NewOpenAIService(apiKey string) *OpenAIService {
 	}
 }
 
-func (s *OpenAIService) GenerateResponse(message string) (string, error) {
+func (s *OpenAIService) GenerateResponse(
+	history []ChatMessage,
+) (string, error) {
+	input := make([]openAIInputItem, 0, len(history))
+
+	for _, message := range history {
+		input = append(input, openAIInputItem{
+			Role:    message.Role,
+			Content: message.Content,
+		})
+	}
+
 	payload := openAIRequest{
 		Model:        "gpt-5-mini",
 		Instructions: prompt.SystemPrompt,
-		Input: []openAIInputItem{
-			{
-				Role:    "user",
-				Content: message,
-			},
-		},
+		Input:        input,
 	}
 
 	body, err := json.Marshal(payload)
