@@ -34,6 +34,31 @@ var (
 	processedMu     sync.Mutex
 )
 
+func isDuplicateEvent(eventID string) bool {
+	if eventID == "" {
+		return false
+	}
+
+	processedMu.Lock()
+	defer processedMu.Unlock()
+
+	now := time.Now()
+
+	for id, processedAt := range processedEvents {
+		if now.Sub(processedAt) > 10*time.Minute {
+			delete(processedEvents, id)
+		}
+	}
+
+	if _, exists := processedEvents[eventID]; exists {
+		return true
+	}
+
+	processedEvents[eventID] = now
+
+	return false
+}
+
 func handleAppMention(event SlackEvent) {
 	log.Printf(
 		"app_mention received: user=%s channel=%s text=%s",
@@ -91,31 +116,6 @@ func handleAppMention(event SlackEvent) {
 		)
 		return
 	}
-}
-
-func isDuplicateEvent(eventID string) bool {
-	if eventID == "" {
-		return false
-	}
-
-	processedMu.Lock()
-	defer processedMu.Unlock()
-
-	now := time.Now()
-
-	for id, processedAt := range processedEvents {
-		if now.Sub(processedAt) > 10*time.Minute {
-			delete(processedEvents, id)
-		}
-	}
-
-	if _, exists := processedEvents[eventID]; exists {
-		return true
-	}
-
-	processedEvents[eventID] = now
-
-	return false
 }
 
 func main() {
