@@ -34,6 +34,7 @@ type SlackEvent struct {
 var (
 	processedEvents = make(map[string]time.Time)
 	processedMu     sync.Mutex
+	threadLocks     sync.Map
 )
 
 func isDuplicateEvent(eventID string) bool {
@@ -81,10 +82,16 @@ func handleAppMention(event SlackEvent) {
 
 	// スレッドIDを決定
 	threadTs := event.ThreadTs
-
 	if threadTs == "" {
 		threadTs = event.Ts
 	}
+
+	threadKey := event.Channel + ":" + threadTs
+
+	mu := getThreadMutex(threadKey)
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	ctx := context.Background()
 
@@ -170,6 +177,15 @@ func handleAppMention(event SlackEvent) {
 		)
 		return
 	}
+}
+
+func getThreadMutex(key string) *sync.Mutex {
+	value, _ := threadLocks.LoadOrStore(
+		key,
+		&sync.Mutex{},
+	)
+
+	return value.(*sync.Mutex)
 }
 
 func main() {
