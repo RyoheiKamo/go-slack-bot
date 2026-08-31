@@ -21,10 +21,33 @@ func main() {
 	client := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 	})
+	defer client.Close()
 
-	keys, err := client.Keys(ctx, "slack:thread:*").Result()
-	if err != nil {
-		log.Fatalf("failed to get chat history keys: %v", err)
+	const pattern = "slack:thread:*"
+	const count int64 = 100
+
+	var (
+		cursor uint64
+		keys   []string
+	)
+
+	for {
+		scannedKeys, nextCursor, err := client.Scan(
+			ctx,
+			cursor,
+			pattern,
+			count,
+		).Result()
+		if err != nil {
+			log.Fatalf("failed to scan chat history keys: %v", err)
+		}
+
+		keys = append(keys, scannedKeys...)
+		cursor = nextCursor
+
+		if cursor == 0 {
+			break
+		}
 	}
 
 	if len(keys) == 0 {
