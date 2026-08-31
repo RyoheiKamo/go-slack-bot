@@ -63,7 +63,12 @@ func isDuplicateEvent(eventID string) bool {
 	return false
 }
 
-func handleAppMention(event SlackEvent) {
+func handleAppMention(
+	event SlackEvent,
+	chatHistoryService *service.ChatHistoryService,
+	openAIService *service.OpenAIService,
+	messageService *service.SlackMessageService,
+) {
 	log.Printf(
 		"app_mention received: user=%s channel=%s text=%s",
 		event.User,
@@ -96,14 +101,6 @@ func handleAppMention(event SlackEvent) {
 	ctx := context.Background()
 
 	// Redis
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		log.Println("REDIS_ADDR is not set")
-		return
-	}
-
-	chatHistoryService := service.NewChatHistoryService(redisAddr)
-
 	history, err := chatHistoryService.GetHistory(
 		ctx,
 		event.Channel,
@@ -121,14 +118,6 @@ func handleAppMention(event SlackEvent) {
 	})
 
 	// OpenAI API
-	openAIAPIKey := os.Getenv("OPENAI_API_KEY")
-	if openAIAPIKey == "" {
-		log.Println("OPENAI_API_KEY is not set")
-		return
-	}
-
-	openAIService := service.NewOpenAIService(openAIAPIKey)
-
 	aiResponse, err := openAIService.GenerateResponse(history)
 	if err != nil {
 		log.Printf(
@@ -158,14 +147,6 @@ func handleAppMention(event SlackEvent) {
 	}
 
 	// Slackへ返信
-	botToken := os.Getenv("SLACK_BOT_TOKEN")
-	if botToken == "" {
-		log.Println("SLACK_BOT_TOKEN is not set")
-		return
-	}
-
-	messageService := service.NewSlackMessageService(botToken)
-
 	if err := messageService.SendMessage(
 		event.Channel,
 		aiResponse,
@@ -189,6 +170,25 @@ func getThreadMutex(key string) *sync.Mutex {
 }
 
 func main() {
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		log.Fatal("REDIS_ADDR is not set")
+	}
+
+	openAIAPIKey := os.Getenv("OPENAI_API_KEY")
+	if openAIAPIKey == "" {
+		log.Fatal("OPENAI_API_KEY is not set")
+	}
+
+	botToken := os.Getenv("SLACK_BOT_TOKEN")
+	if botToken == "" {
+		log.Fatal("SLACK_BOT_TOKEN is not set")
+	}
+
+	chatHistoryService := service.NewChatHistoryService(redisAddr)
+	openAIService := service.NewOpenAIService(openAIAPIKey)
+	messageService := service.NewSlackMessageService(botToken)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "go-slack-bot")
 	})
@@ -266,7 +266,12 @@ func main() {
 			}
 
 			if req.Event.Type == "app_mention" {
-				go handleAppMention(req.Event)
+				go handleAppMention(
+					req.Event,
+					chatHistoryService,
+					openAIService,
+					messageService,
+				)
 			}
 
 			// Slackには即座に200を返す
