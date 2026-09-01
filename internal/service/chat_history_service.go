@@ -16,15 +16,20 @@ type ChatMessage struct {
 
 type ChatHistoryService struct {
 	client *redis.Client
+	ttl    time.Duration
 }
 
-func NewChatHistoryService(addr string) *ChatHistoryService {
+func NewChatHistoryService(
+	addr string,
+	ttl time.Duration,
+) *ChatHistoryService {
 	client := redis.NewClient(&redis.Options{
 		Addr: addr,
 	})
 
 	return &ChatHistoryService{
 		client: client,
+		ttl:    ttl,
 	}
 }
 
@@ -69,7 +74,7 @@ func (s *ChatHistoryService) SaveHistory(
 		ctx,
 		key,
 		value,
-		30*time.Minute,
+		s.ttl,
 	).Err()
 }
 

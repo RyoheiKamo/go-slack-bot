@@ -185,7 +185,17 @@ func main() {
 		log.Fatal("SLACK_BOT_TOKEN is not set")
 	}
 
-	chatHistoryService := service.NewChatHistoryService(redisAddr)
+	chatHistoryTTLString := os.Getenv("CHAT_HISTORY_TTL")
+	if chatHistoryTTLString == "" {
+		log.Fatal("CHAT_HISTORY_TTL is not set")
+	}
+
+	chatHistoryTTL, err := time.ParseDuration(chatHistoryTTLString)
+	if err != nil {
+		log.Fatalf("invalid CHAT_HISTORY_TTL: %v", err)
+	}
+
+	chatHistoryService := service.NewChatHistoryService(redisAddr, chatHistoryTTL)
 	openAIService := service.NewOpenAIService(openAIAPIKey)
 	messageService := service.NewSlackMessageService(botToken)
 

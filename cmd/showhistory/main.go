@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/RyoheiKamo/go-slack-bot/internal/service"
 )
@@ -24,9 +25,19 @@ func main() {
 		log.Fatal("REDIS_ADDR is not set")
 	}
 
+	chatHistoryTTLString := os.Getenv("CHAT_HISTORY_TTL")
+	if chatHistoryTTLString == "" {
+		log.Fatal("CHAT_HISTORY_TTL is not set")
+	}
+
+	chatHistoryTTL, err := time.ParseDuration(chatHistoryTTLString)
+	if err != nil {
+		log.Fatalf("invalid CHAT_HISTORY_TTL: %v", err)
+	}
+
 	ctx := context.Background()
 
-	chatHistoryService := service.NewChatHistoryService(redisAddr)
+	chatHistoryService := service.NewChatHistoryService(redisAddr, chatHistoryTTL)
 
 	history, err := chatHistoryService.GetHistory(
 		ctx,
